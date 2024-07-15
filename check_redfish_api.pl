@@ -34,7 +34,7 @@ use MIME::Base64;
 use LWP::UserAgent;
 use Readonly;
 use File::Basename;
-Readonly our $VERSION => '2.0.2';
+Readonly our $VERSION => '2.0.3';
 my $o_verb;
 sub verb { my $t=shift; if ($o_verb) {print $t,"\n"}  ; return 0}
 my $np = Monitoring::Plugin->new(
