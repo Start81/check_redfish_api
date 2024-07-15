@@ -15,7 +15,7 @@ sudo cpan REST::Client Data::Dumper Monitoring::Plugin MIME::Base64 JSON LWP::Us
 ### Use case
 
 ```bash
-./check_redfish_api.pl 2.0.0
+check_redfish_api.pl 2.0.3
 
 This nagios plugin is free software, and comes with ABSOLUTELY NO WARRANTY.
 It may be used, redistributed and/or modified under the terms of the GNU
@@ -23,7 +23,7 @@ General Public Licence (see http://www.fsf.org/licensing/licenses/gpl.txt).
 
 Nagios check hardware health via redfish API
 
-Usage: ./check_redfish_api.pl -H <hostname> -p <port>  -u <User> -P <password> [-t <timeout>] [-a <apiversion>] [-S] [-T <sensor_list_and_threshold>]
+Usage: check_redfish_api.pl -H <hostname> -p <port>  -u <User> -P <password> [-t <timeout>] [-a <apiversion>] [-S] [-C] [-T <sensor_list_and_threshold>]
 
  -?, --usage
    Print usage information
@@ -46,7 +46,7 @@ Usage: ./check_redfish_api.pl -H <hostname> -p <port>  -u <User> -P <password> [
    User password for api authentication
  -S, --ssl
   The mamagement card use ssl
-  -C, --chassis
+ -C, --chassis
   Check Temp psu and fan only
  -T, --temp="probe1_name,warning,critical@probe2_name,warning2,critical2"
   Check some temperature sensor
