@@ -19,6 +19,7 @@
 #  - 21/07/2022 | 2.0.0 | [+] now the script can check a list of temp sensor
 #  - 14/11/2022 | 2.0.1 | [*] Change the temp separator from ; to @ this for improve Monioring tools compatibility
 #  - 22/11/2022 | 2.0.2 | [*] Update powersupply json parsing
+#  - 15/07/2023 | 2.0.3 | [*] Hp Ilo 4 compatibility 
 #===============================================================================
 
 use strict;
@@ -157,6 +158,7 @@ my $base_url ;
 $client->addHeader('Content-Type', 'application/json');
 $client->addHeader('Accept', 'application/json');
 $client->addHeader('Accept-Encoding',"gzip, deflate, br");
+$client->setFollow(1);
 if ($o_use_ssl) {
     my $ua = LWP::UserAgent->new(
         timeout  => $o_timeout,
@@ -180,8 +182,9 @@ if (!($o_chassis)) {
     verb("full url : $main_url");
     $client->addHeader('Authorization', 'Basic ' . encode_base64("$o_login:$o_pwd"));
     $client->GET($main_url);
-    if($client->responseCode() ne '200'){
+    if($client->responseCode() gt '400'){
         $np->plugin_exit('UNKNOWN', "response code : " . $client->responseCode() . " Message : Error when getting items systems list  $main_url" . $client->{_res}->decoded_content );
+        
     }
     my $rep = $client->{_res}->decoded_content;
     my $items = from_json($rep);
@@ -199,11 +202,12 @@ if (!($o_chassis)) {
             #System global
             $system = $hardware->{'Model'} . " SKU " . $hardware->{'SKU'};
             verb ($system);
-            if (defined ($hardware->{'Status'}->{'HealthRollup'}) and (length ($hardware->{'Status'}->{'HealthRollup'})) >= 2){
-                if ($hardware->{'Status'}->{'HealthRollup'} eq "OK") {
-                    push(@ok,  $system) 
+            if ((defined ($hardware->{'Status'}->{'HealthRollup'}) and (length ($hardware->{'Status'}->{'HealthRollup'})) >= 2) or (defined ($hardware->{'Status'}->{'Health'}) and (length ($hardware->{'Status'}->{'Health'})) >= 2)){
+                if ((defined ($hardware->{'Status'}->{'HealthRollup'}) and ($hardware->{'Status'}->{'HealthRollup'} eq "OK")) or ((defined ($hardware->{'Status'}->{'Health'})) and ($hardware->{'Status'}->{'Health'} eq "OK"))) {
+                    push(@ok,  $system) ;
                 } else {
-                     push(@criticals,  $system ." state is " . ($hardware->{'Status'}->{'HealthRollup'}))
+                    push(@criticals,  $system ." state is " . $hardware->{'Status'}->{'HealthRollup'}) if (defined ($hardware->{'Status'}->{'HealthRollup'}));
+                    push(@criticals,  $system ." state is " . $hardware->{'Status'}->{'Health'}) if (defined ($hardware->{'Status'}->{'Health'}));
                 }
             } else
             {
@@ -228,65 +232,76 @@ if (!($o_chassis)) {
                 }
             }
             #Storage
-            $url_strorages_list = "$url_system/Storage";
+            $url_strorages_list = $url_system."Storage";
+            $url_strorages_list = $url_system."SmartStorage" if ($hardware->{'Manufacturer'} eq "HPE");
             verb($url_strorages_list);
             $client->GET($url_strorages_list);
-            if($client->responseCode() ne '200'){
-               $np->plugin_exit('UNKNOWN', "response code : " . $client->responseCode() . " Message : Error when getting storage list for systems $i ". $client->{_res}->decoded_content );
-            }
-            $storage_rep = $client->{_res}->decoded_content;
-            $storages_list = from_json($storage_rep);
-            verb(Dumper($storages_list));
-            $j = 0;
-            while (exists ($storages_list->{'Members'}->[$j])){
-                $id = $storages_list->{'Members'}->[$j]->{'@odata.id'};
-                $url_strorage = "$base_url$id";
-                verb($url_strorage);
-                $client->GET($url_strorage);
-                if($client->responseCode() ne '200'){
-                   $np->plugin_exit('UNKNOWN', "response code : " . $client->responseCode() . " Message : Error when getting systems $i storage $j ". $client->{_res}->decoded_content );
-                }
+            #If there is no storage it will return a 404
+            if($client->responseCode() lt '400'){
                 $storage_rep = $client->{_res}->decoded_content;
-                $storage = from_json($storage_rep);
-                if (exists $storage->{'Drives@odata.count'}) {
-                    if ($storage->{'Drives@odata.count'} != 0) {
-                        $storage_name = $storage->{'Name'};
-                        if (defined ($storage->{'Status'}->{'HealthRollup'}) and (length (($storage->{'Status'}->{'HealthRollup'}))) >= 2) {
-                            if  ($storage->{'Status'}->{'HealthRollup'} eq "OK") {
-                                push(@ok,  $storage_name)
-                            } 
-                            else {
-                                push(@criticals, $storage_name  ." state is " . ($storage->{'Status'}->{'HealthRollup'}));
-                            }
+                $storages_list = from_json($storage_rep);
+                verb(Dumper($storages_list));
+                $j = 0;
+                if ($hardware->{'Manufacturer'} eq "HPE") {
+                    $storage_name = $storages_list->{'Name'};
+                    if ($storages_list->{'Status'}->{'Health'} eq "OK"){
+
+                        push(@ok,  "$storage_name OK")
+                    } else {
+                        push(@criticals, $storage_name  ." state is " .$storages_list->{'Status'}->{'Health'});
+                    }
+                } else {
+                    while (exists ($storages_list->{'Members'}->[$j])){
+                        $id = $storages_list->{'Members'}->[$j]->{'@odata.id'};
+                        $url_strorage = "$base_url$id";
+                        verb($url_strorage);
+                        $client->GET($url_strorage);
+                        if($client->responseCode() ne '200'){
+                           $np->plugin_exit('UNKNOWN', "response code : " . $client->responseCode() . " Message : Error when getting systems $i storage $j ". $client->{_res}->decoded_content );
                         }
-                        #Disques
-                        $nb_drive_ok=0;
-                        $k = 0;
-                        while (exists ($storage->{'Drives'}->[$k])){
-                            $id=$storage->{'Drives'}->[$k]->{'@odata.id'};
-                            $url_drive = "$base_url$id";
-                            verb($url_drive);
-                            $client->GET($url_drive);
-                            if($client->responseCode() ne '200'){
-                               $np->plugin_exit('UNKNOWN', "response code : " . $client->responseCode() . " Message : Error when getting drive information $id ". $client->{_res}->decoded_content );
-                            }
-                            $drive_rep = $client->{_res}->decoded_content;
-                            $drive = from_json($drive_rep);
-                            verb($drive->{'Id'}. " " .$drive->{'Status'}->{'Health'});
-                            if (defined  ($drive->{'Status'}->{'Health'}) and (length ($drive->{'Status'}->{'Health'})) >= 2){
-                                if (($drive->{'Status'}->{'Health'}) eq "OK") {
-                                    $nb_drive_ok = $nb_drive_ok + 1 ;
-                                } else {
-                                    push(@criticals, "Drive " .  $drive->{'Id'} ." state is " . ($drive->{'Status'}->{'Health'}));
+                        $storage_rep = $client->{_res}->decoded_content;
+                        $storage = from_json($storage_rep);
+                        if (exists $storage->{'Drives@odata.count'}) {
+                            if ($storage->{'Drives@odata.count'} != 0) {
+                                $storage_name = $storage->{'Name'};
+                                if (defined ($storage->{'Status'}->{'HealthRollup'}) and (length (($storage->{'Status'}->{'HealthRollup'}))) >= 2) {
+                                    if  ($storage->{'Status'}->{'HealthRollup'} eq "OK") {
+                                        push(@ok,  $storage_name)
+                                    } 
+                                    else {
+                                        push(@criticals, $storage_name  ." state is " . ($storage->{'Status'}->{'HealthRollup'}));
+                                    }
                                 }
+                                #Disques
+                                $nb_drive_ok=0;
+                                $k = 0;
+                                while (exists ($storage->{'Drives'}->[$k])){
+                                    $id=$storage->{'Drives'}->[$k]->{'@odata.id'};
+                                    $url_drive = "$base_url$id";
+                                    verb($url_drive);
+                                    $client->GET($url_drive);
+                                    if($client->responseCode() ne '200'){
+                                       $np->plugin_exit('UNKNOWN', "response code : " . $client->responseCode() . " Message : Error when getting drive information $id ". $client->{_res}->decoded_content );
+                                    }
+                                    $drive_rep = $client->{_res}->decoded_content;
+                                    $drive = from_json($drive_rep);
+                                    verb($drive->{'Id'}. " " .$drive->{'Status'}->{'Health'});
+                                    if (defined  ($drive->{'Status'}->{'Health'}) and (length ($drive->{'Status'}->{'Health'})) >= 2){
+                                        if (($drive->{'Status'}->{'Health'}) eq "OK") {
+                                            $nb_drive_ok = $nb_drive_ok + 1 ;
+                                        } else {
+                                            push(@criticals, "Drive " .  $drive->{'Id'} ." state is " . ($drive->{'Status'}->{'Health'}));
+                                        }
+                                    }
+                                   $k = $k + 1;
+                                }
+                                push(@ok, "$nb_drive_ok Drive  OK ");
                             }
-                           $k = $k + 1;
                         }
-                        push(@ok, "$nb_drive_ok Drive  OK ");
+                        $j = $j + 1;
+                        
                     }
                 }
-                $j = $j + 1;
-                
             }
         }
         $i = $i + 1
@@ -307,7 +322,7 @@ my $items = from_json($rep);
 if (exists ($items->{'Members'}->[$i])){ #On ne check que le premier chassis
 #while (exists ($items->{'Members'}->[$i])){
     $id = $items->{'Members'}->[$i]->{'@odata.id'};
-    $url_psu = "$url$o_host:$o_port$id/Power";
+    $url_psu = $url.$o_host.":".$o_port.$id."Power";
     $client->GET($url_psu);
     verb($url_psu);
     if($client->responseCode() eq '200'){
@@ -342,7 +357,7 @@ if (exists ($items->{'Members'}->[$i])){ #On ne check que le premier chassis
         }
         push(@ok,"Redundancy OK") if ($psu_redundancy > 0);
     }
-    $url_chassis_thermal = "$url$o_host:$o_port$id/Thermal";
+    $url_chassis_thermal = $url.$o_host.":".$o_port.$id."Thermal";
     verb($url_chassis_thermal);
     $client->GET($url_chassis_thermal);
     $chassis_rep = $client->{_res}->decoded_content;
@@ -418,3 +433,4 @@ $np->plugin_exit('CRITICAL', join(', ', @criticals)) if (scalar @criticals > 0);
 $np->plugin_exit('WARNING', join(', ', @warnings)) if (scalar @warnings > 0);
 $np->plugin_exit('OK', join(', ', @ok) ) if (scalar @ok > 0);
 $np->plugin_exit('UNKNOWN', " Nothing to check" );
+
