@@ -1,6 +1,6 @@
 ## check redfish api
 
-Nagios check hardware health via  [redfish API](https://en.wikipedia.org/wiki/Redfish_(specification)) has been tested on lenovo xcc, dell idrac. It may work on other brand.
+Nagios check hardware health via  [redfish API](https://en.wikipedia.org/wiki/Redfish_(specification)) has been tested on lenovo xcc, dell idrac,HP Ilo. It may work on other brand.
 
 ### prerequisites
 
