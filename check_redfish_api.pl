@@ -38,7 +38,7 @@ Readonly our $VERSION => '2.0.3';
 my $o_verb;
 sub verb { my $t=shift; if ($o_verb) {print $t,"\n"}  ; return 0}
 my $np = Monitoring::Plugin->new(
-    usage => "Usage: %s -H <hostname> -p <port>  -u <User> -P <password> [-t <timeout>] [-a <apiversion>] [-S] [-T <sensor_list_and_threshold>] \n",
+    usage => "Usage: %s -H <hostname> -p <port>  -u <User> -P <password> [-t <timeout>] [-a <apiversion>] [-S] [-C] [-T <sensor_list_and_threshold>] \n",
     plugin => basename($0),
     shortname => 'check_redfish_api',
     blurb => 'Nagios check hardware health via redfish API',
